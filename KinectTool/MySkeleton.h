@@ -29,6 +29,13 @@ public:		// data structures
 		bool isClick;				// click input or hold input
 	};
 
+	struct renderData {
+		GLenum mode;
+		GLsizei count;
+		GLuint buffer;
+		float color[4];
+	};
+
 private:	// variables
 
 	// main brain
@@ -50,12 +57,11 @@ private:	// variables
 
 	// data
 	bool m_isMatch;
+	k4abt_skeleton_t* m_renderSkeleton;
 
 	// render
-	GLuint m_vao;
 	GLuint m_vbo;
 	GLuint m_ebo;
-	std::mutex m_bufferBusy;
 
 public:		// functions
 
@@ -82,8 +88,8 @@ public:		// functions
 	bool Export(const char* path);
 
 	// render functions
-	void Load2Shader(const k4abt_skeleton_t& skeleton);
-	void Render();
+	void Load2Shader();
+	void Render(const GLuint& program);
 
 	// tools
 	static bool CompareJoint(const k4abt_skeleton_t& lhs, const k4abt_skeleton_t& rhs, float thresh = 1.0);

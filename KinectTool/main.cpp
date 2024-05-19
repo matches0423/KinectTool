@@ -8,6 +8,10 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
+// glm
+#include <glm/glm.hpp>
+#include <glm/ext.hpp>
+
 // std
 #include <stdio.h>
 #include <fstream>
@@ -82,6 +86,29 @@ static void ShaderLog(GLuint shader)
 	}
 }
 
+static void RenderTriangle()
+{
+	static const std::array<float, 9> vertices = {
+	-10.0f, -10.0f, 0.0f,
+	 10.0f, -10.0f, 0.0f,
+	 0.0f,  10.0f, 0.0f
+	};
+
+	GLuint VBO;
+	glGenBuffers(1, &VBO);
+	glBindBuffer(GL_ARRAY_BUFFER, VBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), NULL, GL_STATIC_DRAW);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices.data());
+
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(0);
+
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glDeleteBuffers(1, &VBO);
+}
+
 /*************************************************************************************************/
 /*                                     Main Function                                             */
 /*************************************************************************************************/
@@ -153,6 +180,8 @@ int main(int, char**)
 	glAttachShader(shaderProgram, fs);
 
 	glLinkProgram(shaderProgram);
+	glDeleteShader(vs);
+	glDeleteShader(fs);
 
 	// my classes
 	MySkeleton* skeleton = new MySkeleton();
@@ -162,7 +191,7 @@ int main(int, char**)
 	// Main loop
 	while (!glfwWindowShouldClose(window))
 	{
-		int display_w, display_h;
+		static int display_w, display_h;
 		glfwGetFramebufferSize(window, &display_w, &display_h);
 
 		// Start the Dear ImGui frame
@@ -244,23 +273,45 @@ int main(int, char**)
 
 		// GL stuff
 		glViewport(0, 0, display_w, display_h);
-		if (skeleton->hasData())
-		{
-			if (skeleton->isMatch())
-				glClearColor(0.45f, 0.55f, 0.60f, 1.0f);
-			else
-				glClearColor(1.0f, 0.55f, 0.60f, 1.0f);
-		}
-		else
-		{
-			glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-		}
+		glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+		// parameter for mvp matrix
+		static const glm::vec3 camPos(0.0f, 0.0f, 20.0f);
+		static const glm::vec3 camTarget(0.0f, 0.0f, 0.0f);
+		static const glm::vec3 camUp(0.0f, 1.0f, 0.0f);
+		static const float fov = glm::radians(90.0f);
+
+		// calc mvp matrix
+		glm::mat4 projMatrix = glm::perspective(fov, (float)display_w / (float)display_h, 0.1f, 100.0f);
+		glm::mat4 viewMatrix = glm::lookAt(camPos, camTarget, camUp);
+
+		// statr shader program
 		glUseProgram(shaderProgram);
-		skeleton->Render();
+
+		// - send mvp matrix
+		glUniformMatrix4fv(
+			glGetUniformLocation(shaderProgram, "uProj"),
+			1,
+			GL_FALSE,
+			glm::value_ptr(projMatrix)
+		);
+		glUniformMatrix4fv(
+			glGetUniformLocation(shaderProgram, "uView"),
+			1,
+			GL_FALSE,
+			glm::value_ptr(viewMatrix)
+		);
+
+		// - render skeleton
+		skeleton->Load2Shader();
+		skeleton->Render(shaderProgram);
+		//RenderTriangle();
+
+		// - end shader program
 		glUseProgram(0);
 
+		// render gui last to show on top
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 		glfwSwapBuffers(window);

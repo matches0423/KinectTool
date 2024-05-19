@@ -56,7 +56,8 @@ MySkeleton::MySkeleton()
 	this->m_thread = nullptr;
 	this->m_currentPose = nullptr;
 	this->m_isMatch = false;
-	this->m_vao = NULL;
+
+	this->m_renderSkeleton = nullptr;
 
 #ifdef K4A
 	this->m_device = NULL;
@@ -72,8 +73,20 @@ void MySkeleton::Init(GLFWwindow *window)
 {
 	this->m_window = window;
 
-#ifdef K4A
+	// - vbo
+	glGenBuffers(1, &this->m_vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, this->m_vbo);
+	glBufferData(GL_ARRAY_BUFFER, 3 * sizeof(float) * K4ABT_JOINT_COUNT, NULL, GL_DYNAMIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+	// - ebo
+	glGenBuffers(1, &this->m_ebo);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this->m_ebo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), &indices[0], GL_STATIC_DRAW);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
 	// Setup camera
+#ifdef K4A
 	k4a_device_configuration_t device_config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
 	device_config.depth_mode = K4A_DEPTH_MODE_NFOV_UNBINNED;
 
@@ -82,35 +95,13 @@ void MySkeleton::Init(GLFWwindow *window)
 
 	k4a_calibration_t sensor_calibration;
 	VERIFY(k4a_device_get_calibration(this->m_device, device_config.depth_mode, K4A_COLOR_RESOLUTION_OFF, &sensor_calibration),
-		   "Get depth camera calibration failed!");
+		"Get depth camera calibration failed!");
 
 	k4abt_tracker_configuration_t tracker_config = K4ABT_TRACKER_CONFIG_DEFAULT;
 	VERIFY(k4abt_tracker_create(&sensor_calibration, tracker_config, &m_tracker), "Body tracker initialization failed!");
 #elif K4W
 
 #endif
-
-	// create objects
-	glGenVertexArrays(1, &this->m_vao);
-	glGenBuffers(1, &this->m_vbo);
-	glGenBuffers(1, &this->m_ebo);
-
-	// setup vao
-	glBindVertexArray(this->m_vao);
-
-	// - vbo
-	glBindBuffer(GL_ARRAY_BUFFER, this->m_vbo);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
-	glEnableVertexAttribArray(0);
-
-	// - ebo
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this->m_ebo);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), &indices[0], GL_DYNAMIC_DRAW);
-
-	// unbind buffers
-	glBindVertexArray(0);
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
 	printf("Done Init!\n");
 }
@@ -153,13 +144,13 @@ void MySkeleton::Update()
 			{
 				if (k4abt_frame_get_num_bodies(body_frame) > 0)
 				{
-					printf("Get!\n");
+					//printf("Get!\n");
 
 					k4abt_body_t body;
 					VERIFY(k4abt_frame_get_body_skeleton(body_frame, 0, &body.skeleton), "Get body from body frame failed!");
 					body.id = k4abt_frame_get_body_id(body_frame, 0);
 
-					this->Load2Shader(body.skeleton);
+					this->m_renderSkeleton = &body.skeleton;
 
 					this->m_isMatch = false;
 					if (this->m_currentPose)
@@ -339,61 +330,91 @@ bool MySkeleton::Export(const char *path)
 }
 
 #ifdef K4A
-void MySkeleton::Load2Shader(const k4abt_skeleton_t& skeleton)
+void MySkeleton::Load2Shader()
 {
-	std::vector<float> vertices;
+	if (!this->m_renderSkeleton)
+		return;
+
+	k4abt_skeleton_t* data = new k4abt_skeleton_t(*this->m_renderSkeleton);
+	static std::array<float, 3 * K4ABT_JOINT_COUNT> vertices;
+	vertices.fill(0.0f);
 	for (int i = 0; i < (int)K4ABT_JOINT_COUNT; ++i)
 	{
-		vertices.push_back(skeleton.joints[i].position.v[0]);
-		vertices.push_back(-skeleton.joints[i].position.v[1]);		// reverse y coordinate
-		vertices.push_back(-skeleton.joints[i].position.v[2]);		// reverse z coordinate
+		vertices[i * 3 + 0] = (-data->joints[i].position.v[0] / 100.0f);
+		vertices[i * 3 + 1] = (-data->joints[i].position.v[1] / 100.0f);
+		vertices[i * 3 + 2] = (0.0f);
 	}
 
-	if (this->m_bufferBusy.try_lock())
-	{
-		printf("Updating...\n");
-		glBindBuffer(GL_ARRAY_BUFFER, this->m_vbo);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(float) * vertices.size(), &vertices[0], GL_DYNAMIC_DRAW);
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
+	printf("Chest at %5.3f, %5.3f, %5.3f\n",
+		vertices[K4ABT_JOINT_SPINE_CHEST * 3 + 0],
+		vertices[K4ABT_JOINT_SPINE_CHEST * 3 + 1],
+		vertices[K4ABT_JOINT_SPINE_CHEST * 3 + 2]);
+	printf("Pelvis at %5.3f, %5.3f, %5.3f\n",
+		vertices[K4ABT_JOINT_PELVIS * 3 + 0],
+		vertices[K4ABT_JOINT_PELVIS * 3 + 1],
+		vertices[K4ABT_JOINT_PELVIS * 3 + 2]);
 
-		this->m_bufferBusy.unlock();
-	}
+	//printf("Updating...\n");
+	glBindBuffer(GL_ARRAY_BUFFER, this->m_vbo);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices.data());
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+	delete data;
 }
 #endif
 
-void MySkeleton::Render()
+void MySkeleton::Render(const GLuint& program)
 {
-	if (this->m_bufferBusy.try_lock())
-	{
-		printf("Drawing...\n");
-		glBindVertexArray(this->m_vao);
-		glDrawElements(GL_LINES, sizeof(indices) / sizeof(int), GL_UNSIGNED_INT, 0);
-		glBindVertexArray(0);
+	//printf("Drawing...\n");
 
-		this->m_bufferBusy.unlock();
-	}
+	// get uniform to control color
+	GLint uColor = glGetUniformLocation(program, "uColor");
+
+	// bind buffers
+	glBindBuffer(GL_ARRAY_BUFFER, this->m_vbo);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(0);
+
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this->m_ebo);
+
+	glDrawElements(GL_LINES, 62, GL_UNSIGNED_INT, 0);
+
+	// render additional stuff
+	//for (const renderData& r : this->m_renderList)
+	//{
+	//	glUniform4f(uColor, r.color[0], r.color[1], r.color[2], r.color[3]);
+	//	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, r.buffer);
+	//	glDrawElements(r.mode, r.count, GL_UNSIGNED_INT, 0);
+	//}
+
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
 
 
 bool MySkeleton::CompareJoint(const k4abt_skeleton_t& lhs, const k4abt_skeleton_t& rhs, float thresh)
 {
+	// skip joints below hip for now
 	for (int i = 0; i < K4ABT_JOINT_HIP_LEFT; ++i)
 	{
-		// �p��H�߭ȱo���Ҽ{
-		if (lhs.joints[i].confidence_level < K4ABT_JOINT_CONFIDENCE_MEDIUM ||
-			rhs.joints[i].confidence_level < K4ABT_JOINT_CONFIDENCE_MEDIUM)
-		{
-			continue;
-		}
-
-		if (i == K4ABT_JOINT_HAND_LEFT ||
+		// skip these joints for now
+		if (i == K4ABT_JOINT_PELVIS ||
+			i == K4ABT_JOINT_WRIST_LEFT ||
+			i == K4ABT_JOINT_HAND_LEFT ||
 			i == K4ABT_JOINT_HANDTIP_LEFT ||
 			i == K4ABT_JOINT_THUMB_LEFT ||
+			i == K4ABT_JOINT_WRIST_RIGHT ||
 			i == K4ABT_JOINT_HAND_RIGHT ||
 			i == K4ABT_JOINT_HANDTIP_RIGHT ||
 			i == K4ABT_JOINT_THUMB_RIGHT)
 		{
 			continue;
+		}
+		// return false if can not capture joint
+		else if (lhs.joints[i].confidence_level < K4ABT_JOINT_CONFIDENCE_MEDIUM ||
+			rhs.joints[i].confidence_level < K4ABT_JOINT_CONFIDENCE_MEDIUM)
+		{
+			return false;
 		}
 
 		float diff[4] = {0, 0, 0, 0};
@@ -407,7 +428,7 @@ bool MySkeleton::CompareJoint(const k4abt_skeleton_t& lhs, const k4abt_skeleton_
 
 		if (mag > thresh)
 		{
-			printf("Failed ad joint[%d] with error of: %.3f\n", i, mag);
+			//printf("Failed ad joint[%d] with error of: %.3f\n", i, mag);
 			return false;
 		}
 	}
