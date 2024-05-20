@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <cmath>
+#include <boost/tokenizer.hpp>
 
 #define VERIFY(result, error)                                                                            \
 	if (result != K4A_RESULT_SUCCEEDED)                                                                  \
@@ -54,10 +55,20 @@ MySkeleton::MySkeleton()
 {
 	this->m_window = nullptr;
 	this->m_thread = nullptr;
-	this->m_currentPose = nullptr;
-	this->m_isMatch = false;
 
-	this->m_renderSkeleton = nullptr;
+	this->m_device = nullptr;
+	this->m_tracker = nullptr;
+
+	this->m_currentSkeleton = nullptr;
+	this->m_matchPose = nullptr;
+
+	this->m_checkList.fill(1);
+	this->m_failed = 0;
+	this->m_jointThresh = 1.0f;
+
+	this->m_ebo = NULL;
+	this->m_vbo = NULL;
+	this->m_vbo_confidence = NULL;
 
 #ifdef K4A
 	this->m_device = NULL;
@@ -73,10 +84,16 @@ void MySkeleton::Init(GLFWwindow *window)
 {
 	this->m_window = window;
 
-	// - vbo
+	// - vbo for vertices position
 	glGenBuffers(1, &this->m_vbo);
 	glBindBuffer(GL_ARRAY_BUFFER, this->m_vbo);
 	glBufferData(GL_ARRAY_BUFFER, 3 * sizeof(float) * K4ABT_JOINT_COUNT, NULL, GL_DYNAMIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+	// - vbo for confidence level
+	glGenBuffers(1, &this->m_vbo_confidence);
+	glBindBuffer(GL_ARRAY_BUFFER, this->m_vbo_confidence);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(int) * K4ABT_JOINT_COUNT, NULL, GL_DYNAMIC_DRAW);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 	// - ebo
@@ -142,6 +159,7 @@ void MySkeleton::Update()
 			k4a_wait_result_t pop_frame_result = k4abt_tracker_pop_result(m_tracker, &body_frame, K4A_WAIT_INFINITE);
 			if (pop_frame_result == K4A_WAIT_RESULT_SUCCEEDED)
 			{
+				this->m_currentSkeleton = nullptr;
 				if (k4abt_frame_get_num_bodies(body_frame) > 0)
 				{
 					//printf("Get!\n");
@@ -150,17 +168,7 @@ void MySkeleton::Update()
 					VERIFY(k4abt_frame_get_body_skeleton(body_frame, 0, &body.skeleton), "Get body from body frame failed!");
 					body.id = k4abt_frame_get_body_id(body_frame, 0);
 
-					this->m_renderSkeleton = &body.skeleton;
-
-					this->m_isMatch = false;
-					if (this->m_currentPose)
-					{
-						this->m_isMatch = MySkeleton::CompareJoint(body.skeleton, *this->m_currentPose);
-					}
-					else
-					{
-						this->m_poseLog.push(body.skeleton);
-					}
+					this->m_currentSkeleton = &body.skeleton;
 				}
 
 				k4abt_frame_release(body_frame);
@@ -193,27 +201,38 @@ void MySkeleton::Update()
 #endif
 
 		// try to get pose
-		if (!this->m_currentPose)
+		if (this->m_currentSkeleton)
 		{
-			// �p�Gt1 ~ t30��pose����t0��pose�~�t�Ȥp��thresh hold, ����t0
-			if (this->m_poseLog.size() > 30)
+			if (!this->m_matchPose)
 			{
-				this->m_currentPose = new k4abt_skeleton_t(this->m_poseLog.front());
-			}
-			else
-			{
-				while (this->m_poseLog.size() > 0)
+				this->m_skeletonLog.push(*this->m_currentSkeleton);
+
+				// check the difference between the first skeleton in the queue and the current skeleton,
+				// pop the queue until finds a match.
+				while (this->m_skeletonLog.size() > 0)
 				{
-					if (MySkeleton::CompareJoint(this->m_poseLog.front(), this->m_poseLog.back()))
+					if (MySkeleton::CompareJoint(this->m_skeletonLog.front(), this->m_skeletonLog.back()) > 0)
 					{
-						printf("Matched Frames: %zu\n", this->m_poseLog.size());
-						break;
+						this->m_skeletonLog.pop();
 					}
 					else
 					{
-						this->m_poseLog.pop();
+						printf("Matched Frames: %zu\n", this->m_skeletonLog.size());
+						break;
 					}
 				}
+
+				// if the last 30 frames all matched, save this skeleton
+				if (this->m_skeletonLog.size() > 30)
+				{
+					delete this->m_matchPose;
+					this->m_matchPose = new k4abt_skeleton_t(this->m_skeletonLog.front());
+				}
+			}
+			else
+			{
+
+				this->m_failed = MySkeleton::CompareJoint(*this->m_matchPose, *this->m_currentSkeleton);
 			}
 		}
 	}
@@ -246,35 +265,34 @@ void MySkeleton::Stop()
 	this->m_thread = nullptr;
 }
 
-bool MySkeleton::hasData()
-{
-	if (this->m_currentPose)
-		return true;
-	else
-		return false;
-}
-
-bool MySkeleton::isMatch()
-{
-	return this->m_isMatch;
-}
-
 size_t MySkeleton::getSavedAmount()
 {
 	return this->m_savedPose.size();
 }
 
+void MySkeleton::setCheckList(const std::array<bool, K4ABT_JOINT_COUNT>& checkList)
+{
+	this->m_checkList = checkList;
+}
+
+void MySkeleton::setThresh(const float& thresh)
+{
+	this->m_jointThresh = thresh;
+}
+
 void MySkeleton::Clear()
 {
-	if (!this->m_currentPose)
+	if (!this->m_matchPose)
 		return;
 
-	delete (this->m_currentPose);
-	this->m_currentPose = nullptr;
+	delete (this->m_matchPose);
+	this->m_matchPose = nullptr;
 
-	while (!this->m_poseLog.empty())
+	this->m_failed = 0;
+
+	while (!this->m_skeletonLog.empty())
 	{
-		this->m_poseLog.pop();
+		this->m_skeletonLog.pop();
 	}
 }
 
@@ -284,18 +302,16 @@ void MySkeleton::ClearAll()
 	this->Clear();
 }
 
-void MySkeleton::Save(int holdTime, int key, bool isClick)
+void MySkeleton::Save(int key)
 {
-	if (!this->m_currentPose)
+	if (!this->m_matchPose)
 		return;
 
-	MySkeleton::data buf;
-	buf.pose = *this->m_currentPose;
-	buf.holdTime = holdTime;
-	buf.key = key;
-	buf.isClick = isClick;
+	this->m_savedPose.push_back({
+		*this->m_matchPose,
+		key
+		});
 
-	this->m_savedPose.push_back(buf);
 	this->Clear();
 }
 
@@ -308,7 +324,25 @@ void MySkeleton::Import(const char *path)
 		std::string buf = "";
 		while (std::getline(ifs, buf))
 		{
-			printf("%s\n", buf.c_str());
+			MySkeleton::data data;
+			data.key = std::stoi(buf);
+
+			for (int i = 0; i < K4ABT_JOINT_COUNT; ++i)
+			{
+				data.pose.joints[i].confidence_level = K4ABT_JOINT_CONFIDENCE_MEDIUM;
+				std::memset(data.pose.joints[i].orientation.v, 0, sizeof(data.pose.joints[i].orientation.v));
+
+				std::getline(ifs, buf);
+				boost::escaped_list_separator<char> sep;
+				boost::tokenizer<boost::escaped_list_separator<char>> tok(buf, sep);
+				auto it = tok.begin();
+				data.pose.joints[i].orientation.v[0] = std::stof(*it); ++it;
+				data.pose.joints[i].orientation.v[1] = std::stof(*it); ++it;
+				data.pose.joints[i].orientation.v[2] = std::stof(*it); ++it;
+				data.pose.joints[i].orientation.v[3] = std::stof(*it);
+			}
+
+			this->m_savedPose.push_back(data);
 		}
 
 		ifs.close();
@@ -321,7 +355,17 @@ bool MySkeleton::Export(const char *path)
 	ofs.open(path);
 	if (ofs.is_open())
 	{
-		ofs << "Hello world" << std::endl;
+		for (const MySkeleton::data& data : this->m_savedPose)
+		{
+			ofs << data.key << std::endl;
+			for (int i = 0; i < K4ABT_JOINT_COUNT; ++i)
+			{
+				ofs << data.pose.joints[i].orientation.v[0] << ',';
+				ofs << data.pose.joints[i].orientation.v[1] << ',';
+				ofs << data.pose.joints[i].orientation.v[2] << ',';
+				ofs << data.pose.joints[i].orientation.v[3] << '\n';
+			}
+		}
 		ofs.close();
 		return true;
 	}
@@ -332,34 +376,43 @@ bool MySkeleton::Export(const char *path)
 #ifdef K4A
 void MySkeleton::Load2Shader()
 {
-	if (!this->m_renderSkeleton)
+	if (!this->m_currentSkeleton)
 		return;
 
-	k4abt_skeleton_t* data = new k4abt_skeleton_t(*this->m_renderSkeleton);
+	// copy to prevent async update from altering data
+	k4abt_skeleton_t data(*this->m_currentSkeleton);
+	m_currentSkeleton = nullptr;
+
 	static std::array<float, 3 * K4ABT_JOINT_COUNT> vertices;
+	static std::array<int, K4ABT_JOINT_COUNT> confidence;
 	vertices.fill(0.0f);
+	confidence.fill(0);
 	for (int i = 0; i < (int)K4ABT_JOINT_COUNT; ++i)
 	{
-		vertices[i * 3 + 0] = (-data->joints[i].position.v[0] / 100.0f);
-		vertices[i * 3 + 1] = (-data->joints[i].position.v[1] / 100.0f);
+		vertices[i * 3 + 0] = (-data.joints[i].position.v[0] / 100.0f);
+		vertices[i * 3 + 1] = (-data.joints[i].position.v[1] / 100.0f);
 		vertices[i * 3 + 2] = (0.0f);
+
+		confidence[i] = data.joints[i].confidence_level < K4ABT_JOINT_CONFIDENCE_MEDIUM ? 0 : 1;
 	}
 
-	printf("Chest at %5.3f, %5.3f, %5.3f\n",
-		vertices[K4ABT_JOINT_SPINE_CHEST * 3 + 0],
-		vertices[K4ABT_JOINT_SPINE_CHEST * 3 + 1],
-		vertices[K4ABT_JOINT_SPINE_CHEST * 3 + 2]);
-	printf("Pelvis at %5.3f, %5.3f, %5.3f\n",
-		vertices[K4ABT_JOINT_PELVIS * 3 + 0],
-		vertices[K4ABT_JOINT_PELVIS * 3 + 1],
-		vertices[K4ABT_JOINT_PELVIS * 3 + 2]);
+	//printf("Chest at %5.3f, %5.3f, %5.3f\n",
+	//	vertices[K4ABT_JOINT_SPINE_CHEST * 3 + 0],
+	//	vertices[K4ABT_JOINT_SPINE_CHEST * 3 + 1],
+	//	vertices[K4ABT_JOINT_SPINE_CHEST * 3 + 2]);
+	//printf("Pelvis at %5.3f, %5.3f, %5.3f\n",
+	//	vertices[K4ABT_JOINT_PELVIS * 3 + 0],
+	//	vertices[K4ABT_JOINT_PELVIS * 3 + 1],
+	//	vertices[K4ABT_JOINT_PELVIS * 3 + 2]);
 
 	//printf("Updating...\n");
 	glBindBuffer(GL_ARRAY_BUFFER, this->m_vbo);
 	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices.data());
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-	delete data;
+	glBindBuffer(GL_ARRAY_BUFFER, this->m_vbo_confidence);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(confidence), confidence.data());
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 #endif
 
@@ -369,52 +422,55 @@ void MySkeleton::Render(const GLuint& program)
 
 	// get uniform to control color
 	GLint uColor = glGetUniformLocation(program, "uColor");
+	GLint uMode = glGetUniformLocation(program, "uMode");
 
 	// bind buffers
 	glBindBuffer(GL_ARRAY_BUFFER, this->m_vbo);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
 	glEnableVertexAttribArray(0);
 
+	glBindBuffer(GL_ARRAY_BUFFER, this->m_vbo_confidence);
+	glVertexAttribIPointer(1, 1, GL_INT, 0, 0);
+	glEnableVertexAttribArray(1);
+
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this->m_ebo);
 
+	// 1. draw skeleton
+	glUniform1i(uMode, 0);
+	glUniform4f(uColor, 0.0f, 0.0f, 0.0f, 1.0f);
 	glDrawElements(GL_LINES, 62, GL_UNSIGNED_INT, 0);
 
-	// render additional stuff
-	//for (const renderData& r : this->m_renderList)
-	//{
-	//	glUniform4f(uColor, r.color[0], r.color[1], r.color[2], r.color[3]);
-	//	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, r.buffer);
-	//	glDrawElements(r.mode, r.count, GL_UNSIGNED_INT, 0);
-	//}
+	// 2. draw joint confident
+	glUniform1i(uMode, 1);
+	glDrawArrays(GL_POINTS, 0, K4ABT_JOINT_COUNT);
+
+	// 3. draw which joint failed the test
+	if (this->m_failed > 0)
+	{
+		glUniform1i(uMode, 2);
+		glDrawArrays(GL_POINTS, this->m_failed, 1);
+	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
 
 
-bool MySkeleton::CompareJoint(const k4abt_skeleton_t& lhs, const k4abt_skeleton_t& rhs, float thresh)
+int MySkeleton::CompareJoint(const k4abt_skeleton_t& lhs, const k4abt_skeleton_t& rhs)
 {
 	// skip joints below hip for now
-	for (int i = 0; i < K4ABT_JOINT_HIP_LEFT; ++i)
+	for (int i = 0; i < K4ABT_JOINT_COUNT; ++i)
 	{
 		// skip these joints for now
-		if (i == K4ABT_JOINT_PELVIS ||
-			i == K4ABT_JOINT_WRIST_LEFT ||
-			i == K4ABT_JOINT_HAND_LEFT ||
-			i == K4ABT_JOINT_HANDTIP_LEFT ||
-			i == K4ABT_JOINT_THUMB_LEFT ||
-			i == K4ABT_JOINT_WRIST_RIGHT ||
-			i == K4ABT_JOINT_HAND_RIGHT ||
-			i == K4ABT_JOINT_HANDTIP_RIGHT ||
-			i == K4ABT_JOINT_THUMB_RIGHT)
+		if (!this->m_checkList[i])
 		{
 			continue;
 		}
 		// return false if can not capture joint
-		else if (lhs.joints[i].confidence_level < K4ABT_JOINT_CONFIDENCE_MEDIUM ||
+		else if (lhs.joints[i].confidence_level < K4ABT_JOINT_CONFIDENCE_MEDIUM || 
 			rhs.joints[i].confidence_level < K4ABT_JOINT_CONFIDENCE_MEDIUM)
 		{
-			return false;
+			return i;
 		}
 
 		float diff[4] = {0, 0, 0, 0};
@@ -426,11 +482,11 @@ bool MySkeleton::CompareJoint(const k4abt_skeleton_t& lhs, const k4abt_skeleton_
 		float mag = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2] + diff[3] * diff[3];
 		mag = std::sqrt(mag);
 
-		if (mag > thresh)
+		if (mag > this->m_jointThresh)
 		{
 			//printf("Failed ad joint[%d] with error of: %.3f\n", i, mag);
-			return false;
+			return i;
 		}
 	}
-	return true;
+	return 0;
 }

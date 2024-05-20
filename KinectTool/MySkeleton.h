@@ -18,22 +18,12 @@
 #include <vector>
 #include <array>
 #include <queue>
-#include <mutex>
 
 class MySkeleton {
 public:		// data structures
 	struct data {
 		k4abt_skeleton_t pose;		// joint oreantion
-		int holdTime;				// how long the user should hold this pose
 		int key;					// bind to which key
-		bool isClick;				// click input or hold input
-	};
-
-	struct renderData {
-		GLenum mode;
-		GLsizei count;
-		GLuint buffer;
-		float color[4];
 	};
 
 private:	// variables
@@ -43,25 +33,22 @@ private:	// variables
 	std::thread* m_thread;
 
 	// camera
-#ifdef K4A
 	k4a_device_t m_device;
 	k4abt_tracker_t m_tracker;
-#elif K4W
-
-#endif
 
 	// poses data
-	std::queue<k4abt_skeleton_t> m_poseLog;
-	k4abt_skeleton_t* m_currentPose;
+	std::queue<k4abt_skeleton_t> m_skeletonLog;
+	k4abt_skeleton_t* m_currentSkeleton;
+	k4abt_skeleton_t* m_matchPose;
 	std::vector<data> m_savedPose;
+	std::array<bool, K4ABT_JOINT_COUNT> m_checkList;
+	int m_failed;
+	float m_jointThresh;
 
-	// data
-	bool m_isMatch;
-	k4abt_skeleton_t* m_renderSkeleton;
-
-	// render
+	// GL
 	GLuint m_vbo;
 	GLuint m_ebo;
+	GLuint m_vbo_confidence;
 
 public:		// functions
 
@@ -76,14 +63,16 @@ public:		// functions
 	void Stop();
 
 	// get data
-	bool hasData();
-	bool isMatch();
 	size_t getSavedAmount();
+
+	// set data
+	void setCheckList(const std::array<bool, K4ABT_JOINT_COUNT>& checkList);
+	void setThresh(const float& thresh);
 
 	// operations for poses
 	void Clear();
 	void ClearAll();
-	void Save(int holdTime, int key, bool isClick);
+	void Save(int key);
 	void Import(const char* path);
 	bool Export(const char* path);
 
@@ -92,5 +81,5 @@ public:		// functions
 	void Render(const GLuint& program);
 
 	// tools
-	static bool CompareJoint(const k4abt_skeleton_t& lhs, const k4abt_skeleton_t& rhs, float thresh = 1.0);
+	int CompareJoint(const k4abt_skeleton_t& lhs, const k4abt_skeleton_t& rhs);
 };

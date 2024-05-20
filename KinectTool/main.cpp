@@ -13,7 +13,7 @@
 #include <glm/ext.hpp>
 
 // std
-#include <stdio.h>
+#include <cstdio>
 #include <fstream>
 #include <string>
 #include <sstream>
@@ -134,10 +134,15 @@ int main(int, char**)
 
 	glfwMakeContextCurrent(window);
 	gladLoadGL();
+
+#ifdef _DEBUG
 	glfwSwapInterval(1); // Enable vsync
+#endif
 
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LEQUAL);
+
+	glEnable(GL_PROGRAM_POINT_SIZE);
 
 	glfwSetCursorPosCallback(window, cursor_position_callback);
 	glfwSetKeyCallback(window, key_callback);
@@ -183,7 +188,7 @@ int main(int, char**)
 	glDeleteShader(vs);
 	glDeleteShader(fs);
 
-	// my classes
+	// my skeleton class
 	MySkeleton* skeleton = new MySkeleton();
 	skeleton->Init(window);
 	skeleton->Start();
@@ -201,13 +206,45 @@ int main(int, char**)
 
 		{
 			// ImGui inputs
-			static char buf[128] = "";
-			static bool doLoad = false;
-			static char input_path[128] = "imgui.ini";
-			static bool doSave = false;
+			static char str[128] = "";
+			static char input_path[128] = "test.txt";
 			static char output_path[128] = "";
-			static int holdTime = 0;
-			static bool isClick = true;
+			static std::array<bool, K4ABT_JOINT_COUNT> checkList =
+			{
+				false,
+				false,
+				true,
+				true,
+				true,
+				true,
+				true,
+				true,
+				true,
+				false,
+				false,
+				true,
+				true,
+				true,
+				true,
+				true,
+				false,
+				false,
+				false,
+				false,
+				false,
+				false,
+				false,
+				false,
+				false,
+				false,
+				true,
+				false,
+				false,
+				false,
+				false,
+				false,
+			};
+			static float thresh = 1.0f;
 
 			// setup gui
 			static const ImGuiWindowFlags windowsFlags =
@@ -221,49 +258,85 @@ int main(int, char**)
 			ImGui::SetWindowSize(ImVec2(display_w, -1));
 
 			// row 1
-			doLoad = ImGui::Button("Import"); ImGui::SameLine();
-			ImGui::InputTextWithHint("Import Dir", "Import Dir", input_path, sizeof(input_path));
-
-			// row 2
-			snprintf(buf, sizeof(buf), "Bind to key[%s]", glfwGetKeyName(lastKey, 0));
-			ImGui::InputInt("Hold Time", &holdTime); ImGui::SameLine();
-			ImGui::Checkbox("Click Input?", &isClick); ImGui::SameLine();
-			if(ImGui::Button(buf))
-			{
-				skeleton->Save(holdTime, lastKey, isClick);
-				printf("Bind key: %s\n", glfwGetKeyName(lastKey, 0));
-			}
-
-			// row
-			if (ImGui::Button("Clear"))
-				skeleton->Clear();
-			ImGui::SameLine();
-			snprintf(buf, sizeof(buf), "Clear All %zu", skeleton->getSavedAmount());
-			if (ImGui::Button(buf))
-				skeleton->ClearAll();
-
-			// row
-			doSave = ImGui::Button("Export"); ImGui::SameLine();
-			ImGui::InputTextWithHint("Export Dir", "Export Dir", output_path, sizeof(output_path));
-
-			// row 
-			ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-			ImGui::End();
-
-			// logic
-			if (doLoad)
+			if (ImGui::Button("Import"))
 			{
 				skeleton->Import(input_path);
 				std::swap(input_path, output_path);
 				std::memset(input_path, 0, sizeof(input_path));
-				doLoad = false;
 			}
-			 
-			if (doSave)
+			ImGui::SameLine(); ImGui::InputTextWithHint("Import Dir", "Import Dir", input_path, sizeof(input_path));
+
+			// row 2
+			snprintf(str, sizeof(str), "Bind to key[%s]", glfwGetKeyName(lastKey, 0));
+			if (ImGui::Button(str))
+			{
+				skeleton->Save(lastKey);
+				printf("Bind key: %s\n", glfwGetKeyName(lastKey, 0));
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Clear"))
+				skeleton->Clear();
+			ImGui::SameLine();
+			snprintf(str, sizeof(str), "Clear All %zu", skeleton->getSavedAmount());
+			if (ImGui::Button(str))
+				skeleton->ClearAll();
+
+			//
+			if (ImGui::CollapsingHeader("Joints to compare"))
+			{
+				if (ImGui::BeginTable("split", 4))
+				{
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_PELVIS", &checkList[K4ABT_JOINT_PELVIS]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_SPINE_NAVEL", &checkList[K4ABT_JOINT_SPINE_NAVEL]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_SPINE_CHEST", &checkList[K4ABT_JOINT_SPINE_CHEST]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_NECK", &checkList[K4ABT_JOINT_NECK]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_CLAVICLE_LEFT", &checkList[K4ABT_JOINT_CLAVICLE_LEFT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_SHOULDER_LEFT", &checkList[K4ABT_JOINT_SHOULDER_LEFT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_ELBOW_LEFT", &checkList[K4ABT_JOINT_ELBOW_LEFT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_WRIST_LEFT", &checkList[K4ABT_JOINT_WRIST_LEFT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HAND_LEFT", &checkList[K4ABT_JOINT_HAND_LEFT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HANDTIP_LEFT", &checkList[K4ABT_JOINT_HANDTIP_LEFT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_THUMB_LEFT", &checkList[K4ABT_JOINT_THUMB_LEFT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_CLAVICLE_RIGHT", &checkList[K4ABT_JOINT_CLAVICLE_RIGHT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_SHOULDER_RIGHT", &checkList[K4ABT_JOINT_SHOULDER_RIGHT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_ELBOW_RIGHT", &checkList[K4ABT_JOINT_ELBOW_RIGHT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_WRIST_RIGHT", &checkList[K4ABT_JOINT_WRIST_RIGHT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HAND_RIGHT", &checkList[K4ABT_JOINT_HAND_RIGHT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HANDTIP_RIGHT", &checkList[K4ABT_JOINT_HANDTIP_RIGHT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_THUMB_RIGHT", &checkList[K4ABT_JOINT_THUMB_RIGHT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HIP_LEFT", &checkList[K4ABT_JOINT_HIP_LEFT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_KNEE_LEFT", &checkList[K4ABT_JOINT_KNEE_LEFT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_ANKLE_LEFT", &checkList[K4ABT_JOINT_ANKLE_LEFT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_FOOT_LEFT", &checkList[K4ABT_JOINT_FOOT_LEFT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HIP_RIGHT", &checkList[K4ABT_JOINT_HIP_RIGHT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_KNEE_RIGHT", &checkList[K4ABT_JOINT_KNEE_RIGHT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_ANKLE_RIGHT", &checkList[K4ABT_JOINT_ANKLE_RIGHT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_FOOT_RIGHT", &checkList[K4ABT_JOINT_FOOT_RIGHT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HEAD", &checkList[K4ABT_JOINT_HEAD]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_NOSE", &checkList[K4ABT_JOINT_NOSE]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_EYE_LEFT", &checkList[K4ABT_JOINT_EYE_LEFT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_EAR_LEFT", &checkList[K4ABT_JOINT_EAR_LEFT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_EYE_RIGHT", &checkList[K4ABT_JOINT_EYE_RIGHT]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_EAR_RIGHT", &checkList[K4ABT_JOINT_EAR_RIGHT]);
+					ImGui::EndTable();
+				}
+			}
+			skeleton->setCheckList(checkList);
+
+			// row
+			ImGui::SliderFloat("Joint angle threshhold", &thresh, 0.0f, 2.0f);
+			skeleton->setThresh(thresh);
+
+			// row
+			if (ImGui::Button("Export"))
 			{
 				skeleton->Export(output_path);
-				doSave = false;
 			}
+			ImGui::SameLine(); ImGui::InputTextWithHint("Export Dir", "Export Dir", output_path, sizeof(output_path));
+
+			// row 
+			ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+			ImGui::End();
 
 			//ImGui::ShowDemoWindow();
 		}
@@ -328,11 +401,12 @@ int main(int, char**)
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
 
+	glDeleteProgram(shaderProgram);
 	glfwDestroyWindow(window);
 	glfwTerminate();
 
 	skeleton->Stop();
-	delete(skeleton);
+	delete skeleton;
 
 	return 0;
 }
