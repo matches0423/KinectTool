@@ -21,7 +21,6 @@
 // my classes
 #include "MySkeleton.h"
 
-bool testFlag = false;
 int lastKey = 0;
 
 /*************************************************************************************************/
@@ -207,43 +206,9 @@ int main(int, char**)
 		{
 			// ImGui inputs
 			static char str[128] = "";
-			static char input_path[128] = "test.txt";
+			static char input_path[128] = "";
 			static char output_path[128] = "";
-			static std::array<bool, K4ABT_JOINT_COUNT> checkList =
-			{
-				false,
-				false,
-				true,
-				true,
-				true,
-				true,
-				true,
-				true,
-				true,
-				false,
-				false,
-				true,
-				true,
-				true,
-				true,
-				true,
-				false,
-				false,
-				false,
-				false,
-				false,
-				false,
-				false,
-				false,
-				false,
-				false,
-				true,
-				false,
-				false,
-				false,
-				false,
-				false,
-			};
+			static std::array<bool, JOINTS>& checkList = skeleton->getCheckList();
 			static float thresh = 1.0f;
 
 			// setup gui
@@ -264,14 +229,15 @@ int main(int, char**)
 				std::swap(input_path, output_path);
 				std::memset(input_path, 0, sizeof(input_path));
 			}
-			ImGui::SameLine(); ImGui::InputTextWithHint("Import Dir", "Import Dir", input_path, sizeof(input_path));
+			ImGui::SameLine(); ImGui::InputTextWithHint("Import Dir", "file.csv", input_path, sizeof(input_path));
 
 			// row 2
-			snprintf(str, sizeof(str), "Bind to key[%s]", glfwGetKeyName(lastKey, 0));
+			const char* keyName = glfwGetKeyName(lastKey, 0);
+			snprintf(str, sizeof(str), "Bind to key[%s]", keyName);
 			if (ImGui::Button(str))
 			{
 				skeleton->Save(lastKey);
-				printf("Bind key: %s\n", glfwGetKeyName(lastKey, 0));
+				printf("Bind key: %s\n", keyName);
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Clear"))
@@ -281,9 +247,10 @@ int main(int, char**)
 			if (ImGui::Button(str))
 				skeleton->ClearAll();
 
-			//
-			if (ImGui::CollapsingHeader("Joints to compare"))
+			if (ImGui::CollapsingHeader("Compare by orientation"))
 			{
+				ImGui::SliderFloat("Threshhold", &thresh, 0.0f, 2.0f);
+#if defined(K4A)
 				if (ImGui::BeginTable("split", 4))
 				{
 					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_PELVIS", &checkList[K4ABT_JOINT_PELVIS]);
@@ -320,11 +287,38 @@ int main(int, char**)
 					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_EAR_RIGHT", &checkList[K4ABT_JOINT_EAR_RIGHT]);
 					ImGui::EndTable();
 				}
+#elif defined(K4W)
+				if (ImGui::BeginTable("split", 4))
+				{
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_SpineBase", &checkList[JointType_SpineBase]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_SpineMid", &checkList[JointType_SpineMid]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_Neck", &checkList[JointType_Neck]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_Head", &checkList[JointType_Head]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ShoulderLeft", &checkList[JointType_ShoulderLeft]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ElbowLeft", &checkList[JointType_ElbowLeft]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_WristLeft", &checkList[JointType_WristLeft]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HandLeft", &checkList[JointType_HandLeft]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ShoulderRight", &checkList[JointType_ShoulderRight]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ElbowRight", &checkList[JointType_ElbowRight]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_WristRight", &checkList[JointType_WristRight]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HandRight", &checkList[JointType_HandRight]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HipLeft", &checkList[JointType_HipLeft]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_KneeLeft", &checkList[JointType_KneeLeft]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_AnkleLeft", &checkList[JointType_AnkleLeft]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_FootLeft", &checkList[JointType_FootLeft]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HipRight", &checkList[JointType_HipRight]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_KneeRight", &checkList[JointType_KneeRight]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_AnkleRight", &checkList[JointType_AnkleRight]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_FootRight", &checkList[JointType_FootRight]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_SpineShoulder", &checkList[JointType_SpineShoulder]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HandTipLeft", &checkList[JointType_HandTipLeft]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ThumbLeft", &checkList[JointType_ThumbLeft]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HandTipRight", &checkList[JointType_HandTipRight]);
+					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ThumbRight", &checkList[JointType_ThumbRight]);
+					ImGui::EndTable();
+				}
+#endif
 			}
-			skeleton->setCheckList(checkList);
-
-			// row
-			ImGui::SliderFloat("Joint angle threshhold", &thresh, 0.0f, 2.0f);
 			skeleton->setThresh(thresh);
 
 			// row
@@ -332,7 +326,7 @@ int main(int, char**)
 			{
 				skeleton->Export(output_path);
 			}
-			ImGui::SameLine(); ImGui::InputTextWithHint("Export Dir", "Export Dir", output_path, sizeof(output_path));
+			ImGui::SameLine(); ImGui::InputTextWithHint("Export Dir", "file.csv", output_path, sizeof(output_path));
 
 			// row 
 			ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
