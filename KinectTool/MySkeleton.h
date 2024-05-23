@@ -27,6 +27,12 @@ typedef struct {
 #include <array>
 #include <queue>
 
+typedef enum {
+	RECORD,
+	EXECUTE,
+	MODE_COUNT
+}GUI_MODE;
+
 class MySkeleton {
 public:		// data structures
 	struct data {
@@ -58,6 +64,8 @@ private:	// variables
 	int m_failed;
 	float m_jointThresh;
 
+	int m_mode;
+
 	// GL
 	GLuint m_vbo;
 	GLuint m_ebo;
@@ -77,10 +85,12 @@ public:		// functions
 
 	// get data
 	size_t getSavedAmount();
+	std::array<bool, JOINTS>& getCheckList();
+	bool hasMatch();
 
 	// set data
-	std::array<bool, JOINTS>& getCheckList();
 	void setThresh(const float& thresh);
+	void setMode(int mode);
 
 	// operations for poses
 	void Clear();

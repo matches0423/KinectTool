@@ -3,6 +3,7 @@
 #include <fstream>
 #include <cmath>
 #include <boost/tokenizer.hpp>
+#include <Windows.h>
 
 #define VERIFY(result, error)                                                                            \
 	if (result != K4A_RESULT_SUCCEEDED)                                                                  \
@@ -95,6 +96,8 @@ MySkeleton::MySkeleton()
 	this->m_checkList.fill(1);
 	this->m_failed = -1;
 	this->m_jointThresh = 1.0f;
+
+	this->m_mode = RECORD;
 
 	this->m_ebo = NULL;
 	this->m_vbo = NULL;
@@ -283,38 +286,66 @@ void MySkeleton::Update()
 			bodyFrame->Release();
 #endif
 
-		// try to get pose
+			// try to get pose
 		if (this->m_currentSkeleton)
 		{
-			if (!this->m_matchPose)
+			if (this->m_mode == RECORD)
 			{
-				this->m_skeletonLog.push(*this->m_currentSkeleton);
-
-				// check the difference between the first skeleton in the queue and the current skeleton,
-				// pop the queue until finds a match.
-				while (this->m_skeletonLog.size() > 0)
+				if (!this->m_matchPose)
 				{
-					if (MySkeleton::CompareJoint(this->m_skeletonLog.front(), this->m_skeletonLog.back()) >= 0)
+					this->m_skeletonLog.push(*this->m_currentSkeleton);
+
+					// check the difference between the first skeleton in the queue and the current skeleton,
+					// pop the queue until finds a match.
+					while (this->m_skeletonLog.size() > 0)
 					{
-						this->m_skeletonLog.pop();
+						if (MySkeleton::CompareJoint(this->m_skeletonLog.front(), this->m_skeletonLog.back()) >= 0)
+						{
+							this->m_skeletonLog.pop();
+						}
+						else
+						{
+							printf("Matched Frames: %zu\n", this->m_skeletonLog.size());
+							break;
+						}
 					}
-					else
+
+					// if the last 30 frames all matched, save this skeleton
+					if (this->m_skeletonLog.size() > 30)
 					{
-						printf("Matched Frames: %zu\n", this->m_skeletonLog.size());
-						break;
+						delete this->m_matchPose;
+						this->m_matchPose = new skeleton_data(this->m_skeletonLog.front());
 					}
 				}
-
-				// if the last 30 frames all matched, save this skeleton
-				if (this->m_skeletonLog.size() > 30)
+				else
 				{
-					delete this->m_matchPose;
-					this->m_matchPose = new skeleton_data(this->m_skeletonLog.front());
+					this->m_failed = MySkeleton::CompareJoint(*this->m_matchPose, *this->m_currentSkeleton);
 				}
 			}
 			else
 			{
-				this->m_failed = MySkeleton::CompareJoint(*this->m_matchPose, *this->m_currentSkeleton);
+				for (const data& d : this->m_savedPose)
+				{
+					this->m_failed = MySkeleton::CompareJoint(d.skeleton, *this->m_currentSkeleton);
+					if (this->m_failed < 0)
+					{
+						printf("Pressing key[%d]\n", d.key);
+
+						INPUT input;
+						input.type = INPUT_KEYBOARD;
+						input.ki.wVk = d.key;
+						input.ki.wScan = 0;
+						input.ki.dwFlags = 0;
+						input.ki.time = 0;
+						input.ki.dwExtraInfo = 0;
+						SendInput(1, &input, sizeof(INPUT));
+
+						input.ki.dwFlags = KEYEVENTF_KEYUP;
+						SendInput(1, &input, sizeof(INPUT));
+
+						break;
+					}
+				}
 			}
 		}
 	}
@@ -361,9 +392,19 @@ std::array<bool, JOINTS>& MySkeleton::getCheckList()
 	return this->m_checkList;
 }
 
+bool MySkeleton::hasMatch()
+{
+	return this->m_matchPose ? true : false;
+}
+
 void MySkeleton::setThresh(const float& thresh)
 {
 	this->m_jointThresh = thresh;
+}
+
+void MySkeleton::setMode(int mode)
+{
+	this->m_mode = mode;
 }
 
 void MySkeleton::Clear()
@@ -431,7 +472,7 @@ void MySkeleton::Import(const char *path)
 #elif defined(K4W)
 			for (int i = 0; i < JOINTS; ++i)
 			{
-				data.skeleton.joints->TrackingState = TrackingState_Tracked;
+				data.skeleton.joints[i].TrackingState = TrackingState_Tracked;
 
 				std::getline(ifs, buf);
 				boost::escaped_list_separator<char> sep;
@@ -468,6 +509,7 @@ bool MySkeleton::Export(const char *path)
 				ofs << data.skeleton.joints[i].orientation.v[2] << ',';
 				ofs << data.skeleton.joints[i].orientation.v[3] << '\n';
 #elif defined(K4W)
+				assert(data.skeleton.orientations[i].JointType == i);
 				ofs << data.skeleton.orientations[i].Orientation.w << ',';
 				ofs << data.skeleton.orientations[i].Orientation.x << ',';
 				ofs << data.skeleton.orientations[i].Orientation.y << ',';

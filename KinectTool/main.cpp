@@ -88,9 +88,9 @@ static void ShaderLog(GLuint shader)
 static void RenderTriangle()
 {
 	static const std::array<float, 9> vertices = {
-	-10.0f, -10.0f, 0.0f,
-	 10.0f, -10.0f, 0.0f,
-	 0.0f,  10.0f, 0.0f
+		-10.0f, -10.0f, 0.0f,
+		 10.0f, -10.0f, 0.0f,
+		 0.0f,  10.0f, 0.0f
 	};
 
 	GLuint VBO;
@@ -209,7 +209,9 @@ int main(int, char**)
 			static char input_path[128] = "";
 			static char output_path[128] = "";
 			static std::array<bool, JOINTS>& checkList = skeleton->getCheckList();
-			static float thresh = 1.0f;
+			static float thresh = 0.5f;
+			static int guiMode = RECORD;
+			static const char* modeName[MODE_COUNT] = { "Record", "Execute" };
 
 			// setup gui
 			static const ImGuiWindowFlags windowsFlags =
@@ -222,111 +224,122 @@ int main(int, char**)
 			ImGui::SetWindowPos(ImVec2(0, 0));
 			ImGui::SetWindowSize(ImVec2(display_w, -1));
 
-			// row 1
-			if (ImGui::Button("Import"))
-			{
-				skeleton->Import(input_path);
-				std::swap(input_path, output_path);
-				std::memset(input_path, 0, sizeof(input_path));
-			}
-			ImGui::SameLine(); ImGui::InputTextWithHint("Import Dir", "file.csv", input_path, sizeof(input_path));
+			ImGui::SliderInt("Mode", &guiMode, 0, MODE_COUNT - 1, modeName[guiMode]);
+			skeleton->setMode(guiMode);
 
-			// row 2
-			const char* keyName = glfwGetKeyName(lastKey, 0);
-			snprintf(str, sizeof(str), "Bind to key[%s]", keyName);
-			if (ImGui::Button(str))
+			if (guiMode == RECORD)
 			{
-				skeleton->Save(lastKey);
-				printf("Bind key: %s\n", keyName);
-			}
-			ImGui::SameLine();
-			if (ImGui::Button("Clear"))
-				skeleton->Clear();
-			ImGui::SameLine();
-			snprintf(str, sizeof(str), "Clear All %zu", skeleton->getSavedAmount());
-			if (ImGui::Button(str))
-				skeleton->ClearAll();
+				// row 1
+				if (ImGui::Button("Import"))
+				{
+					skeleton->Import(input_path);
+					std::swap(input_path, output_path);
+					std::memset(input_path, 0, sizeof(input_path));
+				}
+				ImGui::SameLine(); ImGui::InputTextWithHint("Import Dir", "file.csv", input_path, sizeof(input_path));
 
-			if (ImGui::CollapsingHeader("Compare by orientation"))
+				// row 2
+				const char* keyName = glfwGetKeyName(lastKey, 0);
+				snprintf(str, sizeof(str), "Bind to key[%s]", keyName);
+				if (ImGui::Button(str))
+				{
+					skeleton->Save(lastKey);
+					printf("Bind key: %s\n", keyName);
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("Clear"))
+					skeleton->Clear();
+				ImGui::SameLine();
+				snprintf(str, sizeof(str), "Clear All %zu", skeleton->getSavedAmount());
+				if (ImGui::Button(str))
+					skeleton->ClearAll();
+
+				if (ImGui::CollapsingHeader("Compare by orientation"))
+				{
+					ImGui::SliderFloat("Threshhold", &thresh, 0.0f, 2.0f);
+#if defined(K4A)
+					if (ImGui::BeginTable("split", 4))
+					{
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_PELVIS", &checkList[K4ABT_JOINT_PELVIS]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_SPINE_NAVEL", &checkList[K4ABT_JOINT_SPINE_NAVEL]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_SPINE_CHEST", &checkList[K4ABT_JOINT_SPINE_CHEST]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_NECK", &checkList[K4ABT_JOINT_NECK]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_CLAVICLE_LEFT", &checkList[K4ABT_JOINT_CLAVICLE_LEFT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_SHOULDER_LEFT", &checkList[K4ABT_JOINT_SHOULDER_LEFT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_ELBOW_LEFT", &checkList[K4ABT_JOINT_ELBOW_LEFT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_WRIST_LEFT", &checkList[K4ABT_JOINT_WRIST_LEFT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HAND_LEFT", &checkList[K4ABT_JOINT_HAND_LEFT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HANDTIP_LEFT", &checkList[K4ABT_JOINT_HANDTIP_LEFT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_THUMB_LEFT", &checkList[K4ABT_JOINT_THUMB_LEFT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_CLAVICLE_RIGHT", &checkList[K4ABT_JOINT_CLAVICLE_RIGHT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_SHOULDER_RIGHT", &checkList[K4ABT_JOINT_SHOULDER_RIGHT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_ELBOW_RIGHT", &checkList[K4ABT_JOINT_ELBOW_RIGHT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_WRIST_RIGHT", &checkList[K4ABT_JOINT_WRIST_RIGHT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HAND_RIGHT", &checkList[K4ABT_JOINT_HAND_RIGHT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HANDTIP_RIGHT", &checkList[K4ABT_JOINT_HANDTIP_RIGHT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_THUMB_RIGHT", &checkList[K4ABT_JOINT_THUMB_RIGHT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HIP_LEFT", &checkList[K4ABT_JOINT_HIP_LEFT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_KNEE_LEFT", &checkList[K4ABT_JOINT_KNEE_LEFT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_ANKLE_LEFT", &checkList[K4ABT_JOINT_ANKLE_LEFT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_FOOT_LEFT", &checkList[K4ABT_JOINT_FOOT_LEFT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HIP_RIGHT", &checkList[K4ABT_JOINT_HIP_RIGHT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_KNEE_RIGHT", &checkList[K4ABT_JOINT_KNEE_RIGHT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_ANKLE_RIGHT", &checkList[K4ABT_JOINT_ANKLE_RIGHT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_FOOT_RIGHT", &checkList[K4ABT_JOINT_FOOT_RIGHT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HEAD", &checkList[K4ABT_JOINT_HEAD]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_NOSE", &checkList[K4ABT_JOINT_NOSE]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_EYE_LEFT", &checkList[K4ABT_JOINT_EYE_LEFT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_EAR_LEFT", &checkList[K4ABT_JOINT_EAR_LEFT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_EYE_RIGHT", &checkList[K4ABT_JOINT_EYE_RIGHT]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_EAR_RIGHT", &checkList[K4ABT_JOINT_EAR_RIGHT]);
+						ImGui::EndTable();
+			}
+#elif defined(K4W)
+					if (ImGui::BeginTable("split", 4))
+					{
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_SpineBase", &checkList[JointType_SpineBase]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_SpineMid", &checkList[JointType_SpineMid]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_Neck", &checkList[JointType_Neck]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_Head", &checkList[JointType_Head]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ShoulderLeft", &checkList[JointType_ShoulderLeft]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ElbowLeft", &checkList[JointType_ElbowLeft]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_WristLeft", &checkList[JointType_WristLeft]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HandLeft", &checkList[JointType_HandLeft]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ShoulderRight", &checkList[JointType_ShoulderRight]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ElbowRight", &checkList[JointType_ElbowRight]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_WristRight", &checkList[JointType_WristRight]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HandRight", &checkList[JointType_HandRight]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HipLeft", &checkList[JointType_HipLeft]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_KneeLeft", &checkList[JointType_KneeLeft]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_AnkleLeft", &checkList[JointType_AnkleLeft]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_FootLeft", &checkList[JointType_FootLeft]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HipRight", &checkList[JointType_HipRight]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_KneeRight", &checkList[JointType_KneeRight]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_AnkleRight", &checkList[JointType_AnkleRight]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_FootRight", &checkList[JointType_FootRight]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_SpineShoulder", &checkList[JointType_SpineShoulder]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HandTipLeft", &checkList[JointType_HandTipLeft]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ThumbLeft", &checkList[JointType_ThumbLeft]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HandTipRight", &checkList[JointType_HandTipRight]);
+						ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ThumbRight", &checkList[JointType_ThumbRight]);
+						ImGui::EndTable();
+					}
+#endif
+		}
+				skeleton->setThresh(thresh);
+
+				// row
+				if (ImGui::Button("Export"))
+				{
+					skeleton->Export(output_path);
+				}
+				ImGui::SameLine(); ImGui::InputTextWithHint("Export Dir", "file.csv", output_path, sizeof(output_path));
+			}
+			else
 			{
 				ImGui::SliderFloat("Threshhold", &thresh, 0.0f, 2.0f);
-#if defined(K4A)
-				if (ImGui::BeginTable("split", 4))
-				{
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_PELVIS", &checkList[K4ABT_JOINT_PELVIS]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_SPINE_NAVEL", &checkList[K4ABT_JOINT_SPINE_NAVEL]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_SPINE_CHEST", &checkList[K4ABT_JOINT_SPINE_CHEST]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_NECK", &checkList[K4ABT_JOINT_NECK]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_CLAVICLE_LEFT", &checkList[K4ABT_JOINT_CLAVICLE_LEFT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_SHOULDER_LEFT", &checkList[K4ABT_JOINT_SHOULDER_LEFT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_ELBOW_LEFT", &checkList[K4ABT_JOINT_ELBOW_LEFT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_WRIST_LEFT", &checkList[K4ABT_JOINT_WRIST_LEFT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HAND_LEFT", &checkList[K4ABT_JOINT_HAND_LEFT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HANDTIP_LEFT", &checkList[K4ABT_JOINT_HANDTIP_LEFT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_THUMB_LEFT", &checkList[K4ABT_JOINT_THUMB_LEFT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_CLAVICLE_RIGHT", &checkList[K4ABT_JOINT_CLAVICLE_RIGHT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_SHOULDER_RIGHT", &checkList[K4ABT_JOINT_SHOULDER_RIGHT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_ELBOW_RIGHT", &checkList[K4ABT_JOINT_ELBOW_RIGHT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_WRIST_RIGHT", &checkList[K4ABT_JOINT_WRIST_RIGHT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HAND_RIGHT", &checkList[K4ABT_JOINT_HAND_RIGHT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HANDTIP_RIGHT", &checkList[K4ABT_JOINT_HANDTIP_RIGHT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_THUMB_RIGHT", &checkList[K4ABT_JOINT_THUMB_RIGHT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HIP_LEFT", &checkList[K4ABT_JOINT_HIP_LEFT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_KNEE_LEFT", &checkList[K4ABT_JOINT_KNEE_LEFT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_ANKLE_LEFT", &checkList[K4ABT_JOINT_ANKLE_LEFT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_FOOT_LEFT", &checkList[K4ABT_JOINT_FOOT_LEFT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HIP_RIGHT", &checkList[K4ABT_JOINT_HIP_RIGHT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_KNEE_RIGHT", &checkList[K4ABT_JOINT_KNEE_RIGHT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_ANKLE_RIGHT", &checkList[K4ABT_JOINT_ANKLE_RIGHT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_FOOT_RIGHT", &checkList[K4ABT_JOINT_FOOT_RIGHT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_HEAD", &checkList[K4ABT_JOINT_HEAD]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_NOSE", &checkList[K4ABT_JOINT_NOSE]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_EYE_LEFT", &checkList[K4ABT_JOINT_EYE_LEFT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_EAR_LEFT", &checkList[K4ABT_JOINT_EAR_LEFT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_EYE_RIGHT", &checkList[K4ABT_JOINT_EYE_RIGHT]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("K4ABT_JOINT_EAR_RIGHT", &checkList[K4ABT_JOINT_EAR_RIGHT]);
-					ImGui::EndTable();
-				}
-#elif defined(K4W)
-				if (ImGui::BeginTable("split", 4))
-				{
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_SpineBase", &checkList[JointType_SpineBase]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_SpineMid", &checkList[JointType_SpineMid]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_Neck", &checkList[JointType_Neck]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_Head", &checkList[JointType_Head]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ShoulderLeft", &checkList[JointType_ShoulderLeft]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ElbowLeft", &checkList[JointType_ElbowLeft]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_WristLeft", &checkList[JointType_WristLeft]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HandLeft", &checkList[JointType_HandLeft]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ShoulderRight", &checkList[JointType_ShoulderRight]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ElbowRight", &checkList[JointType_ElbowRight]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_WristRight", &checkList[JointType_WristRight]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HandRight", &checkList[JointType_HandRight]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HipLeft", &checkList[JointType_HipLeft]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_KneeLeft", &checkList[JointType_KneeLeft]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_AnkleLeft", &checkList[JointType_AnkleLeft]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_FootLeft", &checkList[JointType_FootLeft]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HipRight", &checkList[JointType_HipRight]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_KneeRight", &checkList[JointType_KneeRight]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_AnkleRight", &checkList[JointType_AnkleRight]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_FootRight", &checkList[JointType_FootRight]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_SpineShoulder", &checkList[JointType_SpineShoulder]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HandTipLeft", &checkList[JointType_HandTipLeft]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ThumbLeft", &checkList[JointType_ThumbLeft]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_HandTipRight", &checkList[JointType_HandTipRight]);
-					ImGui::TableNextColumn(); ImGui::Checkbox("JointType_ThumbRight", &checkList[JointType_ThumbRight]);
-					ImGui::EndTable();
-				}
-#endif
+				skeleton->setThresh(thresh);
 			}
-			skeleton->setThresh(thresh);
-
-			// row
-			if (ImGui::Button("Export"))
-			{
-				skeleton->Export(output_path);
-			}
-			ImGui::SameLine(); ImGui::InputTextWithHint("Export Dir", "file.csv", output_path, sizeof(output_path));
 
 			// row 
 			ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
@@ -340,7 +353,10 @@ int main(int, char**)
 
 		// GL stuff
 		glViewport(0, 0, display_w, display_h);
-		glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+		if (skeleton->hasMatch())
+			glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
+		else
+			glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		// parameter for mvp matrix
