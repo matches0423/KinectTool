@@ -15,3 +15,7 @@
 [骨架比較](https://zhuanlan.zhihu.com/p/666777902)  
 [模擬鍵盤輸入](https://learn.microsoft.com/zh-tw/windows/win32/api/winuser/nf-winuser-sendinput)  
 [JSON for Modern C++](https://github.com/nlohmann/json)  
+
+## Build  
+### v1  
+[KinectTool](https://drive.google.com/drive/folders/1LGkx6XeBbmeLOPvQ49hUAIlwzpl00MZu)  
